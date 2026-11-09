@@ -62,7 +62,9 @@ yarn format:check
 - Permissions: `common/auth/permissions.ts` `hasPermission()` — `*` = all, `<resource>.manage` implies every `<resource>.*`. Membership permissions are stored per membership at creation, so editing `ROLE_PERMISSIONS` does not change existing members.
 - Dates for reports/payments are computed in the venue timezone via `shared/utils/time.ts` (`dayRange`, `hourIn`) — never use server-local `setHours`.
 - Uploads: `POST /v1/uploads/images` (multipart `file`, JPG/PNG/WEBP by magic bytes, ≤2MB, `menu.manage`) saves to `UPLOAD_DIR` and returns a relative `/uploads/<tenantId>/<uuid>.<ext>`, served statically outside `/v1` (`app.setup.ts`). Web resolves it with `mediaUrl()` (`lib/media.ts`).
-- Known gaps: realtime is polling (Socket.IO planned, Phase 2); no staff invite/role API yet (Phase 3).
+- **Realtime** (`modules/realtime`): Socket.IO namespace `/realtime`, receive-only. Handshake `auth` = `{ token, tenantId, venueId }` for staff (same membership check as `JwtAuthGuard`) or `{ sessionId }` for QR customers (joins only their table's room). `RealtimeWatcher` uses MongoDB change streams on orders/tables/payments and emits `order.changed` / `table.changed` / `payment.changed` (ids + status only; clients refetch over REST). Needs a replica set (compose and CI run `rs0`); on standalone it logs a warning and clients fall back to polling. Streams reopen on close/invalidate. Multi-instance is correct without a Redis adapter because every instance watches and emits only to its own sockets. `REALTIME_DISABLED=1` turns it off.
+- `customers` unique indexes are partial (`$type: 'string'`) — `sparse` does not work on compound indexes (a second anonymous QR customer used to hit E11000). `CustomerModule` runs `syncIndexes()` on boot to migrate old DBs.
+- Known gaps: no staff invite/role API yet (Phase 3).
 
 ## Web architecture (`ordergo-web/src`)
 
@@ -72,6 +74,8 @@ yarn format:check
 - Shared helpers: `lib/format.ts` (`formatVnd`, status labels/classes), `lib/media.ts`, `components/image-upload.tsx`. Radix `Select` bound to react-hook-form must ignore `""` from `onValueChange` (it fires while options are still loading).
 - Mock data from `app/data.ts` remains only in chef, customers and staff pages. Navigation is defined in `lib/nav-config.ts`; `/reports` is linked but doesn't exist yet.
 - Pages render inside the `(main)` layout's `<main>`, which owns vertical scrolling; full-height screens (POS, KDS) size themselves with `h-svh`.
+- Realtime: `providers/realtime-provider.tsx` (mounted in the `(main)` layout) invalidates TanStack queries on socket events and toasts QR orders / "món đã xong". Hooks poll with `useLiveInterval(fallbackMs)` → 60s while connected, `fallbackMs` when not. Customer pages use `usePublicRealtime(sessionId)` (one shared socket per session). KDS chime is generated with Web Audio (`lib/sound.ts`) and needs one tap on "Bật âm báo".
+- PWA: `app/manifest.ts` + generated icons at `/pwa-icon/192|512`; start URL `/pos`, any orientation.
 - State: Zustand stores in `lib/*-store.ts`. UI primitives: `components/ui/*` (shadcn/Radix); use `cn()` from `@/lib/utils` and the `@/*` alias.
 
 ## Conventions
