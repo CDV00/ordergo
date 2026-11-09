@@ -19,8 +19,8 @@
 | TD-1 | Chặn header `X-Tenant-Id`/`X-Venue-Id` vượt rào tenant: đối chiếu membership trong DB. | S | ✅ |
 | TD-2 | Bỏ package `uuid` (ESM-only, crash trên Node < 20.19 và Jest) → UUID v7 tự sinh. | XS | ✅ |
 | TD-3 | `.gitattributes` LF + sửa lỗi lint có sẵn để CI chạy lint chặn. | S | ✅ |
-| TD-4 | Báo cáo "hôm nay" dùng giờ server/UTC → tính theo `venue.timezone`. | S | ⬜ Phase 1 |
-| TD-5 | Endpoint thêm món vào đơn đã tạo (`AddOrderLineDto` có nhưng chưa có route). | M | ⬜ Phase 1 |
+| TD-4 | Báo cáo "hôm nay" dùng giờ server/UTC → tính theo `venue.timezone`. | S | ✅ Phase 1 |
+| TD-5 | Endpoint thêm món vào đơn đã tạo (`AddOrderLineDto` có nhưng chưa có route). | M | ✅ Phase 1 |
 
 ---
 

@@ -58,13 +58,20 @@ yarn format:check
 - Responses are wrapped `{ data }` by `TransformInterceptor`; errors are `{ error: { code, message, details, requestId } }` from `AllExceptionsFilter`. Throw `HttpException`s with `{ code, message }` (Vietnamese message).
 - IDs: UUID v7 from `shared/utils/uuid.ts` (`newId()`), stored in `id`; Mongo `_id` is not a business key. Money is `{ amount: integer VND, currency: 'VND' }` (`shared/utils/money.ts`).
 - Cross-module events go to the `order_events` outbox collection; no broker yet.
-- Known gaps (Phase 1+): no endpoint to add lines to an existing order; reporting "today" uses server-local time and labels the date in UTC (Docker images set `TZ=Asia/Ho_Chi_Minh`; any other server TZ shifts the window); venue bank account (VietQR) has no API; realtime is polling (Socket.IO planned).
+- **Order lifecycle:** lines with `sentToKitchenAt = null` are not yet sent (KDS hides them). `POST /orders/:id/lines` appends, `send-to-kitchen` sends every unsent line, `DELETE /orders/:id/lines/:lineId` deletes unsent lines or cancels sent ones (needs `order.cancel`). Pricing and derived order status live in pure functions in `modules/order/order-pricing.ts` (prices include VAT; service charge = `venue.settings.serviceChargeRate` × (subtotal − discount)). Creating an order occupies its table; paid → table `cleaning`, cancelled/moved → `available` once no open order remains.
+- Permissions: `common/auth/permissions.ts` `hasPermission()` — `*` = all, `<resource>.manage` implies every `<resource>.*`. Membership permissions are stored per membership at creation, so editing `ROLE_PERMISSIONS` does not change existing members.
+- Dates for reports/payments are computed in the venue timezone via `shared/utils/time.ts` (`dayRange`, `hourIn`) — never use server-local `setHours`.
+- Uploads: `POST /v1/uploads/images` (multipart `file`, JPG/PNG/WEBP by magic bytes, ≤2MB, `menu.manage`) saves to `UPLOAD_DIR` and returns a relative `/uploads/<tenantId>/<uuid>.<ext>`, served statically outside `/v1` (`app.setup.ts`). Web resolves it with `mediaUrl()` (`lib/media.ts`).
+- Known gaps: realtime is polling (Socket.IO planned, Phase 2); no staff invite/role API yet (Phase 3).
 
 ## Web architecture (`ordergo-web/src`)
 
 - `app/(main)/*` authenticated screens (pos, tables, orders, kds, menu, staff, customers, chef, payments); `app/(public)/m/[tenantSlug]/*` customer QR ordering; `app/login`, `app/setup` (setup wizard).
 - Data: axios client `lib/api-client.ts` (attaches Bearer + `X-Tenant-Id`/`X-Venue-Id` from localStorage, refresh on 401) + TanStack Query hooks in `hooks/api/*`. Add API calls as hooks there, not `fetch` in components. Public QR pages use `lib/public-api-client.ts`.
-- Several pages still render mock data from `app/data.ts` (chef, customers, staff, payments, and the `[id]` detail pages of menu/orders/tables). Navigation is defined in `lib/nav-config.ts`; `/reports` and `/settings` are linked but don't exist yet.
+- POS (`app/(main)/pos`): selecting a table with an open order shows its lines ("Đã gọi"); the cart is "Gọi thêm" and is appended to that order, never a new order. Takeaway opens payment right after sending. Payment dialog handles discount, cash tendered/change, VietQR (`GET /orders/:id/payment-qr`) and card; receipts print from `app/print/receipt/[orderId]` (80mm, `?auto=1` auto-prints).
+- Shared helpers: `lib/format.ts` (`formatVnd`, status labels/classes), `lib/media.ts`, `components/image-upload.tsx`. Radix `Select` bound to react-hook-form must ignore `""` from `onValueChange` (it fires while options are still loading).
+- Mock data from `app/data.ts` remains only in chef, customers and staff pages. Navigation is defined in `lib/nav-config.ts`; `/reports` is linked but doesn't exist yet.
+- Pages render inside the `(main)` layout's `<main>`, which owns vertical scrolling; full-height screens (POS, KDS) size themselves with `h-svh`.
 - State: Zustand stores in `lib/*-store.ts`. UI primitives: `components/ui/*` (shadcn/Radix); use `cn()` from `@/lib/utils` and the `@/*` alias.
 
 ## Conventions
