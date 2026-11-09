@@ -69,7 +69,12 @@ export default defineConfig({
         : `${next} build && ${next} start -p ${new URL(WEB_URL).port}`,
       cwd: WEB_DIR,
       url: `${WEB_URL}/login`,
-      env: { NEXT_PUBLIC_API_URL: API_URL, NEXT_TELEMETRY_DISABLED: "1" },
+      // Build vào thư mục riêng → không đè .next của dev server (:3200) đang chạy.
+      env: {
+        NEXT_PUBLIC_API_URL: API_URL,
+        NEXT_TELEMETRY_DISABLED: "1",
+        NEXT_DIST_DIR: process.env.NEXT_DIST_DIR || ".next-e2e",
+      },
       reuseExistingServer: !isCI,
       timeout: 300_000,
       stdout: "ignore",

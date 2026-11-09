@@ -25,3 +25,6 @@ Thumbs.db
 # Deploy staging — file mẫu env được commit, lịch sử deploy thì không
 !.env.staging.example
 deploy/.deploy-history
+
+# scripts/run.ps1: PID, log, ảnh upload khi chạy local
+/.run/

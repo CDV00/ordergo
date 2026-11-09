@@ -24,6 +24,7 @@ Tài liệu là **sống** — khi quyết định thay đổi, hãy update file
 | [06-process/](06-process/) | Workflow phát triển, DoD, release | Tech Lead + PM |
 | [07-risks/](07-risks/) | Rủi ro, giả định, mitigation | Founder |
 | [08-database/](08-database/) | Strategy DB, schema MongoDB, indexing, microservice readiness | DBA + BE |
+| [09-huong-dan-su-dung/](09-huong-dan-su-dung/) | Hướng dẫn sử dụng cho chủ quán, thu ngân, phục vụ, bếp, khách | Người dùng cuối |
 
 ## Danh mục nhanh
 
