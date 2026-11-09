@@ -21,3 +21,7 @@ ordergo-api-v2/
 .DS_Store
 Thumbs.db
 *.log
+
+# Deploy staging — file mẫu env được commit, lịch sử deploy thì không
+!.env.staging.example
+deploy/.deploy-history

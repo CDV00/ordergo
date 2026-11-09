@@ -1,0 +1,10 @@
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+.auth/
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions

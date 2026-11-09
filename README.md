@@ -146,6 +146,16 @@ docker cp ordergo-mongo:/tmp/backup ./backup-$(date +%Y%m%d)
 - [Database schema](docs/08-database/02-mongodb-schema.md)
 - [API Guidelines](docs/04-architecture/03-api-guidelines.md)
 - [Microservice readiness](docs/08-database/04-microservice-readiness.md)
+- [Deploy staging/demo lên VPS](docs/06-process/04-deploy-staging.md)
+
+## Deploy staging / demo (1 VPS)
+
+`docker-compose.prod.yml` + thư mục `deploy/` (Caddy HTTPS tự động, backup Mongo hằng ngày, script deploy/seed/restore). Runbook từng bước: **[docs/06-process/04-deploy-staging.md](docs/06-process/04-deploy-staging.md)**.
+
+```bash
+cp deploy/.env.staging.example .env   # điền domain + secrets
+chmod +x deploy/*.sh && ./deploy/deploy.sh
+```
 
 ## Cấu hình production
 
