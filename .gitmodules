@@ -1,0 +1,6 @@
+[submodule "ordergo-api"]
+	path = ordergo-api
+	url = https://github.com/CDV00/ordergo-api.git
+[submodule "ordergo-web"]
+	path = ordergo-web
+	url = https://github.com/CDV00/ordergo-web.git

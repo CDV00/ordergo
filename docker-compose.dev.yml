@@ -1,0 +1,46 @@
+# Override cho dev — chạy: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# - api: mount source code, chạy `yarn start:dev` (watch mode)
+# - web: mount source code, chạy `yarn dev` (turbopack)
+# - đặt NODE_ENV=development để bật autoIndex Mongo + verbose log
+
+name: ordergo
+
+services:
+  api:
+    build:
+      target: build  # dùng stage có toàn bộ deps + source
+    command: ["yarn", "start:dev"]
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./ordergo-api/src:/opt/src
+      - ./ordergo-api/package.json:/opt/package.json
+      - ./ordergo-api/tsconfig.json:/opt/tsconfig.json
+      - ./ordergo-api/tsconfig.build.json:/opt/tsconfig.build.json
+      - ./ordergo-api/nest-cli.json:/opt/nest-cli.json
+    working_dir: /opt
+    healthcheck:
+      disable: true
+
+  web:
+    build:
+      target: deps  # chỉ cần deps cho dev mode
+    command: ["yarn", "dev"]
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:4000/v1}
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./ordergo-web/src:/opt/src
+      - ./ordergo-web/public:/opt/public
+      - ./ordergo-web/package.json:/opt/package.json
+      - ./ordergo-web/tsconfig.json:/opt/tsconfig.json
+      - ./ordergo-web/next.config.ts:/opt/next.config.ts
+      - ./ordergo-web/tailwind.config.ts:/opt/tailwind.config.ts
+      - ./ordergo-web/postcss.config.mjs:/opt/postcss.config.mjs
+      - ./ordergo-web/eslint.config.mjs:/opt/eslint.config.mjs
+      - ./ordergo-web/components.json:/opt/components.json
+    working_dir: /opt
+    healthcheck:
+      disable: true

@@ -1,0 +1,23 @@
+# Dependencies & build output
+node_modules/
+dist/
+.next/
+bin/
+obj/
+.vs/
+
+# Env — chỉ commit file .example
+.env
+.env.*
+!.env.example
+
+# Scaffold .NET cũ — không dùng (giữ local)
+ordergo-api-v2/
+
+# Claude Code — settings cá nhân
+.claude/settings.local.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
