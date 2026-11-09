@@ -2,12 +2,11 @@
 
 ## Bố cục codebase
 
-Workspace `D:\ordergo` có:
-- `ordergo-api-v2/` — backend .NET 8 (chính thức)
-- `ordergo-web/` — Next.js admin
-- `ordergo-mobile/` — React Native (sẽ init sprint 0)
-- `ordergo-api/` — **deprecated** (NestJS scaffold cũ — không phát triển tiếp)
+Workspace `ordergo` (git repo, 2 submodule):
+- `ordergo-api/` — backend NestJS 11 + MongoDB (chính thức)
+- `ordergo-web/` — Next.js 15 admin + POS + KDS + trang QR khách
 - `docs/` — bộ tài liệu này
+- Mobile POS: dùng PWA của `ordergo-web` trước; app native khi có phản hồi pilot
 
 ## Git strategy
 
@@ -116,18 +115,16 @@ Không trả lời trong 24h → manager check trực tiếp.
 
 ## Coding standards
 
-### Backend (.NET 8)
-- C# 12, nullable enabled
-- StyleCop / EditorConfig
-- Async/await mọi I/O
-- `Result<T>` pattern thay throw exception cho expected error
-- Domain entity không depend trên framework (Pure C#)
-- DI explicit (không Service Locator)
-- Test: xUnit + FluentAssertions
+### Backend (NestJS)
+- TypeScript strict, ESLint (`typescript-eslint` type-checked) + Prettier — CI chạy `yarn lint:check`, `yarn format:check`
+- Lỗi nghiệp vụ: throw `HttpException` với `{ code, message, details }` (message tiếng Việt) — `AllExceptionsFilter` chuẩn hoá
+- Truy cập dữ liệu qua repository kế thừa `BaseTenantRepository`, không gọi model trực tiếp trong service
+- Endpoint ghi phải có `@RequirePermissions`
+- Test: Jest unit (`*.spec.ts` cạnh code) + e2e (`test/*.e2e-spec.ts`, Mongo thật)
 
 ### Frontend (Next.js)
 - TypeScript strict
-- Eslint rule (đang commented out — phải bật lại)
+- ESLint: `eslint.config.mjs` đang rỗng → `next lint` chưa kiểm gì, cần bật lại
 - Component < 200 dòng — refactor nếu vượt
 - Feature folder, không page-based
 - TanStack Query cho data fetching
@@ -203,10 +200,14 @@ Không trả lời trong 24h → manager check trực tiếp.
 # Clone
 git clone .../ordergo
 
+# Hạ tầng (Mongo replica set + Redis)
+docker compose -f docker-compose.infra.yml up -d
+
 # Backend
-cd ordergo-api-v2
-docker-compose up -d  # postgres + redis
-dotnet run --project src/Api/Restaurant.Api
+cd ordergo-api
+corepack enable && yarn install
+yarn seed:demo        # tuỳ chọn: dữ liệu quán demo
+yarn start:dev
 
 # Web
 cd ordergo-web

@@ -17,10 +17,9 @@
 
 ### Sprint 0 (tuần 1–2) — Setup
 - [ ] Hire dev + designer + PM (đã có founder)
-- [ ] Decide stack final (Postgres, .NET 8, RN/Flutter mobile)
-- [ ] Sửa `Program.cs` bug + migrate SQL Server → Postgres
-- [ ] Bỏ codebase NestJS `ordergo-api`
-- [ ] Setup CI/CD GitHub Actions
+- [x] Chốt stack: NestJS + MongoDB (2026-11-09); mobile: PWA trước, native sau
+- [x] Dừng `ordergo-api-v2` (.NET)
+- [x] Setup CI GitHub Actions (lint, test, build, e2e)
 - [ ] Setup staging environment (DigitalOcean Droplet)
 - [ ] Setup observability (Sentry + Grafana free tier)
 - [ ] Tạo design system base (Figma + Tailwind tokens)
@@ -36,7 +35,7 @@
 
 ### Sprint 3 (tuần 7–8) — Order + KDS
 - [ ] Order module: create, update, cancel, send-to-kitchen
-- [ ] Realtime SignalR
+- [ ] Realtime Socket.IO (POS ↔ KDS ↔ khách QR)
 - [ ] KDS web app
 - [ ] Web Admin: Tables, Order list
 

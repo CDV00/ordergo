@@ -6,10 +6,8 @@ Phần mềm quản lý vận hành đa ngành (F&B → Hospitality → ...).
 
 ```
 ordergo/
-├── ordergo-api/             # Backend NestJS + Mongoose (chính thức)
-├── ordergo-web/             # Frontend Next.js admin
-├── ordergo-mobile/          # (placeholder, chưa init)
-├── ordergo-api-v2/          # .NET scaffold cũ — KHÔNG phát triển tiếp
+├── ordergo-api/             # Backend NestJS + Mongoose (submodule)
+├── ordergo-web/             # Frontend Next.js: admin, POS, KDS, QR khách (submodule)
 ├── docs/                    # Bộ tài liệu nền tảng (00-vision → 08-database)
 ├── docker-compose.infra.yml # 👈 Default dev: chỉ Mongo + Redis
 ├── docker-compose.yml       # Production-style: build full image
@@ -19,8 +17,14 @@ ordergo/
 ## Yêu cầu
 
 - Node.js ≥ 20
-- Yarn (classic, 1.x — đã có lockfile)
+- Yarn 4.18.1 qua corepack (`corepack enable` một lần — version lấy từ `packageManager` trong `package.json`)
 - Docker Desktop ≥ 24 hoặc Docker Engine + Compose v2
+
+Clone lần đầu (kèm submodule):
+```bash
+git clone --recurse-submodules https://github.com/CDV00/ordergo.git
+# hoặc nếu đã clone: git submodule update --init --recursive
+```
 
 ## Workflow daily (recommended)
 
@@ -42,6 +46,26 @@ Truy cập:
 - API: http://localhost:4000
 - Swagger: http://localhost:4000/api-docs
 - Mongo: `mongodb://localhost:27017/?replicaSet=rs0&directConnection=true` (đã set sẵn ở `ordergo-api/.env.development`)
+
+Port 27017/6379 đã bị chiếm trên máy? Đổi port host: `MONGO_PORT=27018 REDIS_PORT=6380 docker compose -f docker-compose.infra.yml up -d` rồi sửa `MONGODB_URI` tương ứng.
+
+### Dữ liệu demo
+
+```bash
+cd ordergo-api && yarn seed:demo
+```
+
+Tạo quán **"Cà phê Góc Phố"**: 30 món (biến thể size, mức đường/đá, topping), 12 bàn ở 3 khu, 7 ngày lịch sử (~360 đơn), các đơn đã thu hôm nay và 4 bàn đang phục vụ (chờ bếp / đang làm / đã xong / nháp). Chạy lại bất kỳ lúc nào để reset — chỉ xoá dữ liệu của tenant demo.
+
+| SĐT | Vai trò |
+| --- | --- |
+| 0900000001 | Chủ quán (owner) |
+| 0900000002 | Quản lý (venue_manager) |
+| 0900000003 | Thu ngân (cashier) |
+| 0900000004 | Phục vụ (server) |
+| 0900000005 | Bếp (kitchen) |
+
+Mật khẩu chung `ordergo123` (đổi bằng `DEMO_PASSWORD`). Thanh toán VietQR cần tài khoản thật của quán: đặt `DEMO_BANK_BIN`, `DEMO_BANK_NAME`, `DEMO_BANK_ACCOUNT`, `DEMO_BANK_ACCOUNT_NAME` trước khi seed. Trong Docker: `docker compose exec api node dist/scripts/seed-demo.js --force` (cần `--force` vì `NODE_ENV=production`).
 
 Stop:
 ```bash

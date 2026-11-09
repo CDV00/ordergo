@@ -289,11 +289,9 @@ Quy tắc:
 
 ---
 
-## Migration từ entity cũ trong code v2
+## Ánh xạ sang code hiện tại
 
-Code `ordergo-api-v2` hiện có:
-- `Modules.Menu.Domain.MenuItem` — đã có Id, RestaurantId, Name, Price → đổi `RestaurantId` → `TenantId` + thêm `VenueId`, generalize tên `Restaurant` → tránh đóng cứng vertical (xem memory `OrderGo product vision`)
-- `Modules.Order.Application.OrderCreated` — event placeholder, cần build full Order entity
+Backend `ordergo-api` (NestJS + MongoDB) đã hiện thực các entity: User, Membership, Tenant, Venue, MenuCategory, MenuItem (embed Variant/ToppingGroup), Table, TableSession, Order (embed OrderLine + snapshot), OrderEvent (outbox), Payment, Customer, LoyaltyCard/Transaction, OtpAttempt. Schema chi tiết: `08-database/02-mongodb-schema.md`. Code `ordergo-api-v2` (.NET) đã dừng (2026-11-09).
 
 ---
 *Changelog: v0.1 — 2026-05-01.*

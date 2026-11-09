@@ -93,8 +93,8 @@
 - **Verify**: load test + capacity planning quarterly
 - **Plan B nếu sai**: tách microservice từng module 1 (Reporting trước, Payment sau)
 
-### C2 — .NET 8 + linq2db có hệ sinh thái đủ tốt cho payment/HĐĐT VN — **🟢 Cao**
-- **Cơ sở**: VNPT/Viettel/Momo đều có SDK .NET hoặc REST API. linq2db production-ready
+### C2 — NestJS + MongoDB có hệ sinh thái đủ tốt cho payment/HĐĐT VN — **🟢 Cao**
+- **Cơ sở**: VNPT/Viettel/Momo/VNPay đều có REST API (một số có SDK Node). Mongoose production-ready
 - **Verify**: prototype tích hợp trong sprint 0
 - **Plan B**: nếu thiếu SDK, tự wrap REST API (không khó)
 

@@ -10,17 +10,17 @@
 | INF-1 | As **dev**, I want a CI pipeline that builds + tests on every PR, so I catch regressions early. | M |
 | INF-2 | As **dev**, I want auto-deploy to staging on merge to `main`, so I see changes live in 5 phút. | M |
 | INF-3 | As **dev**, I want centralized error tracking (Sentry), so I know about prod errors without users reporting. | S |
-| INF-4 | As **dev**, I want `dotnet ef migrations` (or FluentMigrator) ready, so schema changes are versioned. | M |
+| INF-4 | As **dev**, I want schema changes versioned (`schemaVersion` + migration script trong `src/scripts/`), so dữ liệu cũ không vỡ. | M |
 | INF-5 | As **founder**, I want staging env with seed data, so I can demo to design partner without messing prod. | S |
 
-### EPIC: Tech debt cleanup (existing v2 code)
-| ID | User story | Size |
-| --- | --- | --- |
-| TD-1 | Sửa `Program.cs:22` `options` → `opt` typo. | XS |
-| TD-2 | Migrate SQL Server → PostgreSQL (connection string + linq2db.PostgreSQL package). | M |
-| TD-3 | Đổi `IRestaurantContext` → `ITenantContext` + `RestaurantId` → `TenantId`. | M |
-| TD-4 | Replace hardcoded GUID trong `RestaurantContextMiddleware` bằng JWT extraction. | M |
-| TD-5 | Bỏ codebase NestJS `ordergo-api` khỏi workspace (chỉ giữ history). | XS |
+### EPIC: Tech debt cleanup (`ordergo-api` NestJS) — cập nhật 2026-11-09
+| ID | User story | Size | Trạng thái |
+| --- | --- | --- | --- |
+| TD-1 | Chặn header `X-Tenant-Id`/`X-Venue-Id` vượt rào tenant: đối chiếu membership trong DB. | S | ✅ |
+| TD-2 | Bỏ package `uuid` (ESM-only, crash trên Node < 20.19 và Jest) → UUID v7 tự sinh. | XS | ✅ |
+| TD-3 | `.gitattributes` LF + sửa lỗi lint có sẵn để CI chạy lint chặn. | S | ✅ |
+| TD-4 | Báo cáo "hôm nay" dùng giờ server/UTC → tính theo `venue.timezone`. | S | ⬜ Phase 1 |
+| TD-5 | Endpoint thêm món vào đơn đã tạo (`AddOrderLineDto` có nhưng chưa có route). | M | ⬜ Phase 1 |
 
 ---
 
@@ -105,8 +105,8 @@
 ### EPIC: Realtime infra
 | ID | User story | Size |
 | --- | --- | --- |
-| RT-1 | As **dev**, I want SignalR hub `operations` với Redis backplane, so multi-instance scale. | L |
-| RT-2 | As **dev**, I want auth JWT cho SignalR connection, so tenant isolation. | M |
+| RT-1 | As **dev**, I want Socket.IO gateway với Redis adapter, so multi-instance scale. | L |
+| RT-2 | As **dev**, I want auth JWT + kiểm membership khi join room Socket.IO, so tenant isolation. | M |
 | RT-3 | As **dev**, I want connection drop → auto reconnect, so partner UX không bị gián đoạn. | M |
 
 ---
