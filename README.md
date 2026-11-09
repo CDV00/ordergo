@@ -26,6 +26,16 @@ git clone --recurse-submodules https://github.com/CDV00/ordergo.git
 # hoặc nếu đã clone: git submodule update --init --recursive
 ```
 
+## Chạy nhanh trên máy dev (Windows + nginx gateway)
+
+```powershell
+.\scripts\run.ps1 -Seed   # Mongo/Redis + API :4200 + Web :3200 + nginx → http://ordergo.localhost
+.\scripts\off.ps1         # tắt API + Web (thêm -Infra để tắt Mongo/Redis)
+```
+
+- Điện thoại cùng Wi-Fi: `http://<ip-may>:8083` (nginx `D:/Docker/nginx`, cấu hình gốc `deploy/nginx-local/50-ordergo.conf`).
+- Log: `.run/logs/api.log`, `.run/logs/web.log`. Đăng nhập demo `0900000001` / `ordergo123`.
+
 ## Workflow daily (recommended)
 
 Hạ tầng (Mongo + Redis) chạy Docker, code chạy native — fastest hot reload, debugger attach dễ, IDE tooling chuẩn.
@@ -55,7 +65,7 @@ Port 27017/6379 đã bị chiếm trên máy? Đổi port host: `MONGO_PORT=2701
 cd ordergo-api && yarn seed:demo
 ```
 
-Tạo quán **"Cà phê Góc Phố"**: 30 món (biến thể size, mức đường/đá, topping), 12 bàn ở 3 khu, 7 ngày lịch sử (~360 đơn), các đơn đã thu hôm nay và 4 bàn đang phục vụ (chờ bếp / đang làm / đã xong / nháp). Chạy lại bất kỳ lúc nào để reset — chỉ xoá dữ liệu của tenant demo.
+Tạo quán **"Cà phê Góc Phố"**: 30 món (biến thể size, mức đường/đá, topping), 12 bàn ở 3 khu, 7 ngày lịch sử (~360 đơn), các đơn đã thu hôm nay và 4 bàn đang phục vụ (chờ bếp / đang làm / đã xong / nháp). Kèm chi nhánh thứ 2 **"Góc Phố - Quận 1"** (menu chép từ Q3, bàn A1–A6, 3 ngày lịch sử) để demo đa chi nhánh. Chạy lại bất kỳ lúc nào để reset — chỉ xoá dữ liệu của tenant demo.
 
 | SĐT | Vai trò |
 | --- | --- |
@@ -142,6 +152,8 @@ docker cp ordergo-mongo:/tmp/backup ./backup-$(date +%Y%m%d)
 
 ## Tài liệu
 
+- [**Hướng dẫn sử dụng (người dùng cuối)**](docs/09-huong-dan-su-dung/README.md)
+- [Kịch bản demo 10 phút](docs/05-roadmap/04-kich-ban-demo.md)
 - [Bộ tài liệu nền tảng](docs/README.md)
 - [Database schema](docs/08-database/02-mongodb-schema.md)
 - [API Guidelines](docs/04-architecture/03-api-guidelines.md)
