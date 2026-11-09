@@ -38,7 +38,7 @@
 - Index DB hợp lý (tenant_id, venue_id always first)
 - Connection pool DB đủ size
 - Không gọi external API trong request handler
-- SignalR push, không polling
+- Socket.IO push, không polling (hiện còn polling — Phase 2)
 
 ### Báo cáo
 - Aggregate query từ read model riêng (không real-time aggregate trên transactional DB)

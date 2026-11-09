@@ -4,9 +4,9 @@
 
 1. **Modular monolith** trước, microservice sau (chỉ tách khi có lý do cụ thể)
 2. **Pragmatic over pure** — DDD-light, CQRS chỉ ở Reporting, không over-engineer
-3. **Cloud-native nhưng cost-conscious** — AWS/DO với managed services, không tự host PostgreSQL nếu không cần
+3. **Cloud-native nhưng cost-conscious** — AWS/DO với managed services, không tự host MongoDB production nếu không cần (Atlas / managed)
 4. **Mobile-first cho POS, web-first cho admin** — tách 2 client codebase với UX tối ưu cho từng surface
-5. **Realtime là first-class citizen** — WebSocket/SignalR cho POS↔KDS, không polling
+5. **Realtime là first-class citizen** — WebSocket (Socket.IO) cho POS↔KDS, không polling
 6. **Offline-first cho POS** — queue local, sync khi online, idempotency keys
 
 ## Bird's-eye
@@ -31,9 +31,9 @@
 └─────────────────────────────────────────────────────────────────────────┘
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                          API HOST (.NET 8)                              │
+│                     API HOST (NestJS 11, Node 20)                       │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  Restaurant.Api  (modular monolith)                             │   │
+│  │  ordergo-api  (modular monolith)                                │   │
 │  │                                                                  │   │
 │  │  Modules: Identity, Tenant, Catalog.FB, Catalog.Hotel,          │   │
 │  │           Order, Booking, Payment, Inventory, Customer,         │   │
@@ -46,7 +46,7 @@
             │             │                  │
             ▼             ▼                  ▼
     ┌──────────────┐ ┌─────────────┐ ┌──────────────────┐
-    │  PostgreSQL  │ │  Redis      │ │  Object Storage  │
+    │  MongoDB     │ │  Redis      │ │  Object Storage  │
     │  (primary +  │ │  (cache +   │ │  (S3-compatible) │
     │   replica)   │ │   queue +   │ │  - menu images   │
     │              │ │   pub/sub)  │ │  - bill PDFs     │
@@ -54,7 +54,7 @@
 
          ▼                                      ▼
     ┌──────────────────────┐         ┌──────────────────────┐
-    │  Workers (.NET)      │         │  External services   │
+    │  Workers (Nest cron) │         │  External services   │
     │  - Outbox publisher  │         │  - Momo, VNPay       │
     │  - Notification jobs │         │  - VNPT-Invoice      │
     │  - Report aggregator │         │  - SES/SendGrid      │
@@ -67,19 +67,22 @@
 Mỗi module trong monolith theo cấu trúc layered DDD-light:
 
 ```
-Modules.<Name>/
-├── Domain/              # Entity, Value Object, Domain Event, Aggregate
-├── Application/         # Use case, Command/Query handler, Application service
-├── Infrastructure/      # Repository (linq2db), External adapter
-├── Api/                 # Controller, DTO, validator
-└── <Name>Module.cs      # DI extension method (AddXModule)
+src/modules/<name>/
+├── <name>.module.ts      # Nest module: imports, providers, exports
+├── <name>.controller.ts  # REST endpoint mỏng, khai báo @RequirePermissions
+├── <name>.service.ts     # Use case / nghiệp vụ
+├── dto/                  # class-validator DTO (input)
+├── schemas/              # Mongoose schema (document của module này)
+└── repositories/         # Kế thừa BaseTenantRepository (tự lọc tenantId + soft delete)
 ```
+
+Cross-cutting ở `src/common/` (guard, middleware, filter, interceptor, decorator, tenant context) và `src/shared/` (base repository, utils).
 
 ## Realtime layer
 
-- **SignalR** (.NET native) cho push từ server → client
-- Topic pattern: `tenant:{tenantId}:venue:{venueId}:orders` — phục vụ subscribe; KDS subscribe; chủ subscribe
-- Broker: Redis Pub/Sub backplane (cho horizontal scale)
+- **Socket.IO** gateway (`@nestjs/websockets`) cho push từ server → client — *chưa làm, hiện đang polling (Phase 2)*
+- Room: `tenant:{tenantId}:venue:{venueId}` — phục vụ, KDS, chủ quán cùng nghe; khách QR nghe `session:{sessionId}`
+- Broker: `@socket.io/redis-adapter` (cho horizontal scale)
 
 ## Offline + Sync (POS app)
 
@@ -91,14 +94,18 @@ Modules.<Name>/
 ## Authentication & Authorization
 
 - **JWT** access token (15 phút) + refresh token (30 ngày)
-- Claims: `sub` (user_id), `tenant_id` (active tenant), `venue_id` (active venue), `roles`
-- **2FA TOTP** cho role Owner/TenantAdmin
-- Middleware: `JwtBearer` validate → `TenantContextMiddleware` set `ITenantContext` → policy `[Authorize(Policy = "order.create")]` ở controller
+- Claims: `sub` (userId), `tenantId`, `venueId`, `permissions` (tenant/venue mặc định lúc đăng nhập)
+- **2FA TOTP** cho role Owner/TenantAdmin (chưa làm)
+- Luồng mỗi request:
+  1. `TenantContextMiddleware` mở `AsyncLocalStorage` context từ JWT (không đọc header)
+  2. `JwtAuthGuard` (global) verify JWT → `TenantAccessService` lấy tenant/venue yêu cầu (`X-Tenant-Id` / `X-Venue-Id`, fallback JWT), **đối chiếu membership trong DB** → 403 nếu không thuộc về user; permissions lấy từ membership
+  3. `PermissionsGuard` kiểm `@RequirePermissions('order.create')` (owner có `*`)
+  4. Repository đọc tenant từ context → tự lọc
 
 ## Database access
 
-- **linq2db** (đã chọn ở v2) — typed, performant, ít magic hơn EF
-- Migration: **FluentMigrator** hoặc **DbUp** — không phụ thuộc EF
+- **Mongoose 9** + schema/index khai báo trong `schemas/` của từng module
+- Thay đổi schema: field mới có default + `schemaVersion` trên document; migrate dữ liệu bằng script trong `src/scripts/` (xem `08-database/`)
 - Repository pattern light — không lạm dụng generic repository
 - Multi-tenant filter ở repository layer (đã giải thích ở `03-domain/04-multi-tenant.md`)
 
@@ -135,7 +142,7 @@ Module A
 
 3 trụ:
 
-1. **Logs**: Serilog → stdout → Loki / CloudWatch
+1. **Logs**: Nest Logger (→ pino JSON khi lên staging) → stdout → Loki / CloudWatch
 2. **Metrics**: Prometheus format / OpenTelemetry → Grafana / CloudWatch
 3. **Traces**: OpenTelemetry → Jaeger / Tempo / Honeycomb
 
@@ -145,7 +152,7 @@ Health check endpoint: `/health/live`, `/health/ready`
 
 ### MVP (3–6 tháng đầu)
 - 1 instance API (DigitalOcean Droplet 4GB, Singapore)
-- 1 PostgreSQL managed (DO Managed DB, $15/tháng base)
+- 1 MongoDB replica set (Atlas M10 hoặc tự host 1 node + backup hằng ngày)
 - 1 Redis managed
 - 1 Object storage (DO Spaces)
 - Cloudflare free
@@ -153,7 +160,7 @@ Health check endpoint: `/health/live`, `/health/ready`
 
 ### Năm 1
 - 2 instances API behind LB (auto-scale 2–4)
-- PostgreSQL primary + 1 replica
+- MongoDB replica set 3 node
 - Redis cluster mode
 - Workers tách riêng (1–2 instance)
 - CDN: Cloudflare Pro
@@ -171,11 +178,11 @@ Health check endpoint: `/health/live`, `/health/ready`
 
 | Layer | Choice |
 | --- | --- |
-| Backend | .NET 8 (đã có v2 scaffold) |
-| ORM | linq2db |
-| DB | PostgreSQL (recommend đổi từ SQL Server hiện tại) |
+| Backend | NestJS 11 (Node 20, TypeScript) |
+| ODM | Mongoose 9 |
+| DB | MongoDB 7 (replica set) |
 | Cache/Queue/PubSub | Redis |
-| Realtime | SignalR |
+| Realtime | Socket.IO + Redis adapter |
 | Web Admin | Next.js 15 + Tailwind + shadcn (đã có) |
 | Mobile POS | React Native (recommend) hoặc Flutter |
 | Object Storage | S3-compatible (DO Spaces / R2) |
@@ -195,14 +202,14 @@ Health check endpoint: `/health/live`, `/health/ready`
 
 ## Anti-pattern cần tránh
 
-- ❌ EF Core với Lazy Loading + auto migration (đã chọn linq2db chính vì điều này)
-- ❌ Generic repository `IRepository<T>` — leak abstraction
+- ❌ Gọi Mongoose model trực tiếp trong service nghiệp vụ — đi qua repository để giữ tenant isolation
+- ❌ Repository generic phơi query tuỳ ý cho service — `BaseTenantRepository` chỉ cung cấp CRUD có lọc tenant; query đặc thù viết method riêng
 - ❌ Service Locator pattern — dùng DI explicit
 - ❌ Long-running HTTP requests (> 10s) — push sang background job
 - ❌ Sync gọi external API trong request handler — qua queue
-- ❌ Polling realtime — dùng SignalR
+- ❌ Polling realtime — dùng Socket.IO
 - ❌ Hardcode connection string — dùng config + secret manager
-- ❌ Console.WriteLine logging — Serilog structured
+- ❌ `console.log` — dùng Nest Logger (structured)
 
 ---
-*Changelog: v0.1 — 2026-05-01.*
+*Changelog: v0.1 — 2026-05-01. v0.3 — 2026-11-09: cập nhật theo NestJS + MongoDB, luồng tenant isolation mới.*

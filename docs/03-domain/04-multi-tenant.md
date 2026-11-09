@@ -64,12 +64,12 @@ User ──Membership──▶ Tenant
 
 1. **Mọi entity nghiệp vụ có cột `tenant_id`** (ngoại trừ `User`, `Tenant` toàn cục)
 2. **Query filter ở app layer**, không dựa RLS DB
-   - Đã có `IRestaurantContext` (đổi tên `ITenantContext`) — middleware set từ JWT → mọi repository inject + filter
-   - `MenuRepository.GetAll() => _db.Menu.Where(m => m.TenantId == _ctx.TenantId)` — pattern bắt buộc
-3. **Middleware verify JWT có claim `tenant_id`**, set vào `ITenantContext`
+   - `TenantContextService` (AsyncLocalStorage) giữ tenant/venue của request → `BaseTenantRepository` tự thêm `tenantId` + `deletedAt: null` vào mọi query
+   - Repository mới **phải** kế thừa `BaseTenantRepository`; query raw model phải tự thêm `tenantId`
+3. **`JwtAuthGuard` verify JWT**, rồi đối chiếu tenant/venue yêu cầu (header `X-Tenant-Id`/`X-Venue-Id` hoặc JWT) với **membership trong DB** — không thuộc về user → 403. Permissions lấy từ membership nên thu hồi quyền có hiệu lực ngay
 4. **Code review + lint rule**: query không filter `tenant_id` → reject
 5. **Audit log** cho mọi truy cập cross-tenant (nếu có user multi-tenant)
-6. **Test isolation**: integration test với 2 tenant, verify tenant A không đọc được data tenant B
+6. **Test isolation**: e2e với 2 tenant (`ordergo-api/test/app.e2e-spec.ts`) — tenant A không đọc/ghi được data tenant B kể cả khi đổi header
 
 ### Lưu ý: middleware hiện tại đang **hardcode tenant_id** (`11111...1`) — phải replace bằng JWT extraction trước MVP.
 

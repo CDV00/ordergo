@@ -85,4 +85,4 @@ Bản đầu tiên do founder + AI cùng phác thảo. **Cần review và iterat
 - Xác nhận thị trường mục tiêu (VN-first hay đa quốc gia)
 - Chốt mô hình pricing
 - Chốt scope MVP (8–12 tuần)
-- Chốt stack backend (NestJS hay .NET) — hiện đang có 2 codebase song song
+- ~~Chốt stack backend~~ → **NestJS + MongoDB** (v0.3, 2026-11-09). Các đoạn còn nhắc .NET/PostgreSQL trong bộ doc là lịch sử hoặc phương án tương lai.

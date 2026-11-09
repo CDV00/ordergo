@@ -64,8 +64,8 @@
   - Test chaos: tắt mạng giữa transaction, verify
 - **Owner**: Mobile Tech Lead
 
-### R-T2 — Realtime SignalR scale issue ở 1.000+ venue — **Score 9 (P3 × I3)**
-- **Mô tả**: SignalR hub với Redis backplane chưa proven ở 10k+ concurrent connection
+### R-T2 — Realtime Socket.IO scale issue ở 1.000+ venue — **Score 9 (P3 × I3)**
+- **Mô tả**: Socket.IO với Redis adapter (Node đơn luồng) chưa proven ở 10k+ concurrent connection
 - **Mitigation**:
   - Load test sớm (sprint 3) với 100 connection/venue × 100 venue = 10k
   - Backup plan: switch sang Ably (managed) nếu fail

@@ -1,6 +1,6 @@
 # Module Catalog
 
-> Liệt kê các module trong codebase, ranh giới, dependency, owner. Map 1:1 với folder `src/Modules/<Name>` trong backend.
+> Liệt kê các module trong codebase, ranh giới, dependency, owner. Map 1:1 với folder `ordergo-api/src/modules/<name>` trong backend (NestJS).
 
 ## Nguyên tắc module
 
@@ -15,7 +15,7 @@
 ```
                           ┌──────────────────────┐
                           │       Api Host        │
-                          │    (Restaurant.Api)   │
+                          │     (ordergo-api)     │
                           └──────┬───────┬───────┘
                                  │       │
               ┌──────────────────┴───┐   │
@@ -67,9 +67,9 @@
 - Cần thiết khi tách microservice sau
 
 #### Shared.Database
-- linq2db `AppDataConnection`
-- Migration runner (FluentMigrator hoặc EF Core migrations)
-- Multi-tenant filter qua `IRestaurantContext` (đổi tên thành `ITenantContext`)
+- Mongoose connection (`src/database/database.module.ts`)
+- `BaseTenantRepository` (`src/shared/base/`) — tự lọc `tenantId` + soft delete
+- Multi-tenant context qua `TenantContextService` (AsyncLocalStorage); tenant/venue đã được `JwtAuthGuard` đối chiếu membership
 
 #### Shared.Common
 - `ITenantContext`, middleware
@@ -200,11 +200,11 @@
 
 ## Quy tắc khi thêm module mới
 
-1. Tạo project `src/Modules/<Name>` (csproj reference Shared)
-2. Thêm vào `RestaurantManagement.sln` và `Restaurant.Api.csproj`
-3. Định nghĩa public events ở `<Module>.Application.Events.*`
-4. Expose `Add<Name>Module(IServiceCollection)` extension
-5. Thêm vào `Program.cs`: `builder.Services.Add<Name>Module()`
+1. Tạo `src/modules/<name>/` với `<name>.module.ts`, `<name>.controller.ts`, `<name>.service.ts`, `dto/`, `schemas/`, `repositories/`
+2. Repository kế thừa `BaseTenantRepository`; schema có `tenantId` + audit fields (`shared/base/base.schema.ts`)
+3. Phát event qua outbox (`order_events` hiện tại) — tránh gọi service của module khác trực tiếp
+4. Endpoint ghi khai báo `@RequirePermissions(...)`; quyền mới thêm vào `ROLE_PERMISSIONS`
+5. Import module vào `src/app.module.ts`
 6. Viết tài liệu module ở file này (mục "Modules nghiệp vụ")
 7. Thêm vào `02-product/05-feature-catalog.md`
 
@@ -228,4 +228,4 @@ Module được tách khi đồng thời:
 Trước đó: cứ ở chung monolith, profile + scale vertical đủ rồi.
 
 ---
-*Changelog: v0.1 — 2026-05-01.*
+*Changelog: v0.1 — 2026-05-01. v0.3 — 2026-11-09: quy tắc module theo NestJS.*

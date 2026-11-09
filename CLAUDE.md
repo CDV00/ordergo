@@ -4,77 +4,70 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-`D:\ordergo` is a workspace folder, not a single repo. It contains four sibling projects, each with its own toolchain (and `ordergo-api` / `ordergo-web` are independent git repos):
+`ordergo/` is a git repo (workspace) with two **git submodules**, each its own repo with its own toolchain:
 
-- `ordergo-api/` — NestJS 11 + MongoDB backend (TypeScript, yarn). Original/legacy API.
-- `ordergo-api-v2/` — .NET 8 modular monolith (linq2db + SQL Server). Replacement API being built from a `RestaurantManagement_Full_Modular_Linq2DB.zip` scaffold.
-- `ordergo-web/` — Next.js 15 (App Router, Turbopack) + React 19 + Tailwind 4 + shadcn/ui admin UI (Vietnamese).
-- `ordergo-mobile/` — empty placeholder.
+- `ordergo-api/` — NestJS 11 + Mongoose 9 + MongoDB backend (TypeScript). **The only backend.** The old .NET `ordergo-api-v2` was dropped (2026-11-09); ignore any .NET/linq2db/PostgreSQL/SignalR mentions that survive in older docs.
+- `ordergo-web/` — Next.js 15 (App Router, Turbopack) + React 19 + Tailwind 4 + shadcn/ui: admin, POS, KDS and the customer QR-ordering pages.
+- `docs/` — product/architecture docs (Vietnamese). `docs/08-database/` is the source of truth for Mongo schema.
+- `docker-compose.infra.yml` (Mongo replica set `rs0` + Redis, daily dev), `docker-compose.yml` (full prod-style), `docker-compose.dev.yml` (override).
 
-There is no top-level workspace, lockfile, or build orchestration: change directory into the specific project before running commands.
+There is no top-level package.json: `cd` into a submodule before running commands. Commit inside the submodule first, then commit the updated submodule pointer in the workspace repo.
+
+## Toolchain
+
+- Node 20, **Yarn 4.18.1 via corepack** (`packageManager` in each `package.json`): run `corepack enable` once. The globally installed yarn may be older and reject `.yarnrc.yml` (`approvedGitRepositories`).
+- Do not keep `npmMinimalAgeGate: 0` if Yarn adds it to `.yarnrc.yml` — that disables the supply-chain age gate.
+- Line endings are LF everywhere (`.gitattributes`); prettier enforces `endOfLine: lf`.
 
 ## Common commands
 
-### `ordergo-api` (NestJS, yarn)
+### `ordergo-api`
 ```bash
-yarn install
-yarn start:dev          # watch mode (default port 4000, Swagger at /api-docs)
+yarn start:dev          # watch mode, http://localhost:4000/v1, Swagger at /api-docs
 yarn build              # nest build → dist/
-yarn start:prod         # node dist/main
-yarn lint               # eslint --fix on src,apps,libs,test
-yarn format             # prettier write
-yarn test               # jest (testRegex: *.spec.ts under src/)
-yarn test -- path/to/file.spec.ts   # run a single test file
-yarn test -- -t "name"  # filter by test name
-yarn test:e2e           # jest with test/jest-e2e.json
-yarn test:cov           # coverage → ../coverage
+yarn lint:check         # eslint, no --fix (CI). `yarn lint` auto-fixes.
+yarn format:check
+yarn test               # jest unit tests (*.spec.ts next to code, rootDir src/)
+yarn test -- src/modules/tenant          # one folder / file
+yarn test:e2e           # test/app.e2e-spec.ts — needs a real Mongo (see below)
+yarn seed:demo          # build + reset + seed the demo café "Cà phê Góc Phố"
 ```
-Requires `MONGODB_URI` (and optionally `MONGODB_DB`) in `.env.development`; `src/config/mongodb.ts` throws on startup if `MONGODB_URI` is missing.
+- Config: `.env.development` (committed, dev-only secrets) then `.env`; real env vars win. Joi validation requires `MONGODB_URI` and `JWT_*_SECRET` ≥ 32 chars.
+- E2E uses DB `ordergo_e2e` (dropped each run) at `E2E_MONGODB_URI` (default `mongodb://localhost:27017/?directConnection=true`).
+- Port 27017 may be taken on a dev machine: start infra with `MONGO_PORT=27018 docker compose -f docker-compose.infra.yml up -d` and point `MONGODB_URI`/`E2E_MONGODB_URI` at 27018.
+- Demo seed logins: `0900000001`…`0900000005` (owner, venue_manager, cashier, server, kitchen), password `ordergo123` (override with `DEMO_PASSWORD`). Reset only touches the demo tenant. VietQR bank account only via `DEMO_BANK_*` env — never invent an account number.
 
-### `ordergo-api-v2` (.NET 8)
+### `ordergo-web`
 ```bash
-dotnet restore RestaurantManagement.sln
-dotnet build RestaurantManagement.sln
-dotnet run --project src/Api/Restaurant.Api/Restaurant.Api.csproj
-# launchSettings: https://localhost:59579 ; http://localhost:59580
+yarn dev                # http://localhost:3000 (API from NEXT_PUBLIC_API_URL, default http://localhost:4000/v1)
+yarn build
+yarn tsc --noEmit
+yarn lint               # NOTE: eslint.config.mjs is empty, so this checks nothing yet
+yarn format:check
 ```
-Requires `ConnectionStrings:Default` (SQL Server) in appsettings — `Program.cs` calls `UseSqlServer(...)` on it. No test project yet.
 
-### `ordergo-web` (Next.js 15)
-```bash
-yarn install
-yarn dev                # next dev --turbopack (http://localhost:3000)
-yarn build              # next build (Dockerfile expects standalone output)
-yarn start              # next start
-yarn lint               # next lint
-```
-The committed `eslint.config.mjs` is fully commented out, so `next lint` only runs the default Next ruleset. Path alias `@/*` → `src/*`. Production image is built via the multi-stage `Dockerfile` (Node 20 alpine, yarn 4 via corepack, expects Next standalone output and Sentry build secret).
+## Backend architecture (`ordergo-api/src`)
 
-## Architecture
+- `modules/<name>/` — one Nest module per bounded context: `*.module.ts`, `*.controller.ts` (thin), `*.service.ts`, `dto/` (class-validator), `schemas/` (Mongoose), `repositories/`. Modules: identity, tenant, catalog, table, table-session, order, payment, reporting, customer, loyalty, otp, public-api.
+- **Tenant isolation (read before touching auth or data access):**
+  1. `TenantContextMiddleware` opens an `AsyncLocalStorage` context from the JWT only.
+  2. Global `JwtAuthGuard` verifies the JWT, then `TenantAccessService.resolve()` takes the requested tenant/venue (`X-Tenant-Id` / `X-Venue-Id` headers, falling back to JWT claims) and **checks it against active memberships in the DB** → 403 `TENANT_ACCESS_DENIED` / `VENUE_ACCESS_DENIED`. Permissions come from the membership, not the JWT. It then mutates the ALS context and sets `req.user`.
+  3. Global `PermissionsGuard` enforces `@RequirePermissions(...)` (`*` = owner). Role → permission map: `ROLE_PERMISSIONS` in `modules/tenant/schemas/membership.schema.ts`.
+  4. Repositories extend `BaseTenantRepository` (`shared/base/`), which injects `tenantId` + `deletedAt: null` into every query and stamps audit fields. Never read tenant from headers in services; never query a model raw without adding `tenantId`.
+  - `@Public()` routes skip the guard and only see the JWT tenant. `public-api` (customer QR flow) builds its own context via `tenantCtx.run(...)` from a table session.
+- Responses are wrapped `{ data }` by `TransformInterceptor`; errors are `{ error: { code, message, details, requestId } }` from `AllExceptionsFilter`. Throw `HttpException`s with `{ code, message }` (Vietnamese message).
+- IDs: UUID v7 from `shared/utils/uuid.ts` (`newId()`), stored in `id`; Mongo `_id` is not a business key. Money is `{ amount: integer VND, currency: 'VND' }` (`shared/utils/money.ts`).
+- Cross-module events go to the `order_events` outbox collection; no broker yet.
+- Known gaps (Phase 1+): no endpoint to add lines to an existing order; reporting "today" uses server-local time and labels the date in UTC (Docker images set `TZ=Asia/Ho_Chi_Minh`; any other server TZ shifts the window); venue bank account (VietQR) has no API; realtime is polling (Socket.IO planned).
 
-### `ordergo-api` (NestJS) — early scaffold
-- Standard Nest layout under `src/`: `modules/{chefs,menus,orders,payments,staffs,tables}`, plus empty `common/`, `config/`, `controllers/`, `models/`, `services/`, `shared/`. Most module folders are empty — the project is in initial scaffold and `AppModule` (`src/app.module.ts`) imports nothing yet.
-- `src/main.ts` boots Nest with Swagger (`SwaggerModule.setup('api-docs', ...)`, Bearer auth registered) on `process.env.PORT ?? 4000`.
-- `src/config/mongodb.ts` exports a singleton `clientPromise` from the raw `mongodb` driver. In `NODE_ENV=development` it caches the client on `globalThis._mongoClientPromise` to survive HMR; in prod a fresh client is created. There is no Mongoose; data access is via the native MongoDB client.
-- The intended structure is documented in `docs/structure.md` (in Vietnamese) — follow that layout when adding modules: each feature gets `<feature>.controller.ts`, `<feature>.service.ts`, `<feature>.module.ts`, plus `schemas/` and `dto/` subfolders. Cross-cutting concerns go under `common/` (decorators, filters, guards, interceptors, pipes, utils) and reusable services under `shared/` (mail, cache, logger).
+## Web architecture (`ordergo-web/src`)
 
-### `ordergo-api-v2` (.NET 8 modular monolith)
-- One ASP.NET Core host (`src/Api/Restaurant.Api`) composes feature modules from `src/Modules/<Module>` (currently `Menu`, `Order`, `Notify`). Each module exposes a static `Add<Module>Module(IServiceCollection)` extension; `Program.cs` calls them sequentially. Add new modules by creating a new csproj under `src/Modules/<Name>`, adding it to `RestaurantManagement.sln` and `Restaurant.Api.csproj`, and exposing an `Add<Name>Module` extension.
-- Modules follow a layered convention inside their csproj: `Domain/` (linq2db `[Table]/[Column]` POCOs), `Infrastructure/` (repositories taking `AppDataConnection` + `IRestaurantContext`), `Application/` (handlers / use-cases). Modules reference `Shared` only — they do **not** reference each other directly. Cross-module communication goes through events on `IEventBus` (e.g. `Notify` subscribes to `Modules.Order.Application.OrderCreated`).
-- `Shared/`:
-  - `Database/AppDataConnection.cs` — single linq2db `DataConnection` registered via `AddLinqToDBContext<AppDataConnection>` against `ConnectionStrings:Default` (SQL Server).
-  - `Common/IRestaurantContext` + `RestaurantContextMiddleware` — multi-tenant scoping. Every repository must filter/stamp rows by `_ctx.RestaurantId` (see `MenuRepository.GetAll/Insert`). The middleware currently **hardcodes** RestaurantId/EmployeeId GUIDs (`11111…1` / `22222…2`); replacing this with real auth extraction is an outstanding TODO — keep the contract (`Guid RestaurantId`, `Guid EmployeeId`, `string Role`) when wiring real auth.
-  - `EventBus/IEventBus` + `InMemoryEventBus` — process-local pub/sub, **not thread-safe** and registered as a Singleton. Fine for in-process notifications inside one host; do not assume durability or cross-process delivery.
-- `Program.cs` has a known bug: line 22 references `options` instead of the lambda parameter `opt` (`return options.UseSqlServer(...)`). Fix to `opt.UseSqlServer(...)` when touching DB wiring.
+- `app/(main)/*` authenticated screens (pos, tables, orders, kds, menu, staff, customers, chef, payments); `app/(public)/m/[tenantSlug]/*` customer QR ordering; `app/login`, `app/setup` (setup wizard).
+- Data: axios client `lib/api-client.ts` (attaches Bearer + `X-Tenant-Id`/`X-Venue-Id` from localStorage, refresh on 401) + TanStack Query hooks in `hooks/api/*`. Add API calls as hooks there, not `fetch` in components. Public QR pages use `lib/public-api-client.ts`.
+- Several pages still render mock data from `app/data.ts` (chef, customers, staff, payments, and the `[id]` detail pages of menu/orders/tables). Navigation is defined in `lib/nav-config.ts`; `/reports` and `/settings` are linked but don't exist yet.
+- State: Zustand stores in `lib/*-store.ts`. UI primitives: `components/ui/*` (shadcn/Radix); use `cn()` from `@/lib/utils` and the `@/*` alias.
 
-### `ordergo-web` (Next.js admin)
-- App Router under `src/app/`. Authenticated screens live under the `(main)` route group; each feature has `page.tsx` + `loading.tsx` + `[id]/` for detail (`orders`, `menu`, `tables`, `staff`, `customers`, `chef`, `payments`). `login/` is outside the group.
-- Layout shell (`src/app/layout.tsx`) wraps every page in `ThemeProvider` (next-themes, attribute=`class`, supports system / dark) and `SidebarProvider` + `AppSidebar` + `SidebarInset`. The sidebar nav is hardcoded in `src/components/app-sidebar.tsx` — add new top-level routes there. UI strings are Vietnamese (`lang="vi"`, Inter with vietnamese subset).
-- Components: `src/components/ui/*` is the shadcn/ui (Radix) primitive set; bespoke shell components (`app-sidebar`, `mobile-header`, `notifications`, `responsive-table`, `search-bar`, `theme-provider`) live one level up. Use the `cn()` helper from `@/lib/utils` for class merging and the `@/*` path alias for imports.
-- No state library, no API client, no auth wiring is in place yet — pages currently render from local mock data (`src/app/data.ts`). When integrating with `ordergo-api` / `ordergo-api-v2`, introduce the client at the boundary rather than scattering `fetch` calls in components.
-- `next.config.ts` is a stub; the active config is the `module.exports = nextConfig` block (image formats: avif/webp). The Dockerfile expects `output: "standalone"` — add it to `next.config.ts` before relying on the production image build.
+## Conventions
 
-## Cross-project notes
-
-- The two API projects (`ordergo-api`, `ordergo-api-v2`) target different stacks and databases (Mongo vs SQL Server). They are alternatives, not layers — confirm which one a task targets before editing.
-- All projects use Vietnamese for user-facing text and code comments. Preserve Vietnamese strings in UI copy and don't "translate" them to English when refactoring.
+- All user-facing text and code comments are Vietnamese — keep them Vietnamese when refactoring.
+- Work on a branch; never commit directly to `main` in any of the three repos.

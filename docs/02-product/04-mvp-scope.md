@@ -188,8 +188,8 @@ MVP coi như sẵn sàng khi đồng thời:
 ## Câu hỏi cần chốt trước kickoff
 
 - [ ] Stack mobile: React Native hay Flutter? → quyết định ở `04-architecture/02-tech-stack.md`
-- [ ] Backend: tiếp tục `ordergo-api-v2` (.NET 8) hay đổi sang Nest? → khuyến nghị tiếp .NET v2
-- [ ] DB: SQL Server (đang config) hay đổi PostgreSQL? → khuyến nghị PostgreSQL (cost + ecosystem)
+- [x] Backend: **chốt NestJS + MongoDB** (`ordergo-api`), dừng `ordergo-api-v2` (.NET) — 2026-11-09
+- [x] DB: **MongoDB** (theo backend NestJS) — xem `08-database/`
 - [ ] Hosting: tự host VPS hay cloud (AWS/GCP/DO)? → khuyến nghị DigitalOcean (cost) hoặc AWS (mature)
 - [ ] HĐĐT đối tác: VNPT, Viettel hay MISA? → recommend VNPT (volume lớn, doc dễ)
 

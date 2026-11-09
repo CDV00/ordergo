@@ -126,7 +126,7 @@ Tóm lược:
 - **Whitelist** thay vì blacklist
 - Validate ở 3 lớp: client (UX), API (FluentValidation), DB (constraint + check)
 - HTML/Script trong text field → HTML encode khi render (XSS prevention)
-- SQL injection → linq2db parameterize, không string concat
+- NoSQL injection → `ValidationPipe` (whitelist + forbidNonWhitelisted) chặn object/operator `$` lạ trong body; không truyền query object từ client thẳng vào Mongoose
 - File upload:
   - Whitelist extension + magic bytes check
   - Max size: 5MB cho image, 10MB cho doc
@@ -244,7 +244,7 @@ Tóm lược:
 
 ### Vulnerability management
 - Dependabot enabled
-- `dotnet list package --vulnerable` trong CI
+- `yarn npm audit --all --recursive` trong CI (chưa bật — Phase 4)
 - Patch CVE high < 7 ngày, critical < 24h
 
 ### Penetration testing

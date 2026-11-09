@@ -4,63 +4,37 @@
 
 ## Backend
 
-### Quyết định: **.NET 8** (ASP.NET Core)
+> **v0.3 (2026-11-09)** — đã chốt **NestJS + MongoDB**, thay cho quyết định .NET 8 ở v0.1. Code `ordergo-api-v2` (.NET) dừng phát triển và không còn trong workspace.
+
+### Quyết định: **NestJS 11** (Node.js 20, TypeScript)
 
 **Lý do**:
-- Đã có scaffold `ordergo-api-v2` đang dùng .NET 8 + linq2db + modular monolith
-- Performance vượt trội Node.js, Python ở workload tương tự (POS request thrust)
-- Type-safe, async/await mature, ecosystem lớn
-- SignalR realtime native, SDK tốt cho payment/HĐĐT VN
-- VN có dev .NET nhiều hơn Go/Rust
+- Codebase `ordergo-api` đã chạy được các luồng chính: đăng ký → setup wizard → menu → bàn → gọi món → bếp → thu tiền, cùng luồng khách quét QR gọi món
+- Cùng ngôn ngữ (TypeScript) với web admin Next.js → chia sẻ kiểu dữ liệu, 1 team full-stack
+- Module system + DI của Nest khớp kiến trúc modular monolith (mỗi bounded context 1 module)
+- Ecosystem đủ cho realtime (Socket.IO gateway), cron (`@nestjs/schedule`), Swagger, validation
 
 **Alternatives đã cân nhắc**:
-- **NestJS (Node.js)**: hệ sinh thái JS, share type với FE; nhưng performance kém ở concurrent workload, type system yếu hơn C#
-- **Go**: nhanh, deploy nhỏ; nhưng ecosystem Go cho enterprise app (auth, ORM, payment) yếu hơn .NET, dev VN ít hơn
-- **Java Spring Boot**: ổn định nhưng heavyweight, dev VN có nhưng cost cao
+- **.NET 8 (`ordergo-api-v2`)**: hiệu năng tốt hơn ở workload CPU nặng, nhưng scaffold mới ở mức khung (tenant hardcode, chưa auth) → phải viết lại toàn bộ luồng đã có trên NestJS
+- **Go**: nhanh, deploy nhỏ; ecosystem cho auth/payment VN yếu hơn, team không quen
 
-**Quyết định kèm**: 
-- **Bỏ `ordergo-api` (NestJS)** — không phát triển tiếp, chỉ giữ làm reference. Tập trung 100% vào `ordergo-api-v2`.
+**Rủi ro chấp nhận**: Node đơn luồng — tách việc nặng (báo cáo, HĐĐT, gửi thông báo) sang worker/queue khi cần; đo trước khi tối ưu.
 
 ---
 
-### ORM: **linq2db**
+### Database & ODM: **MongoDB 7 + Mongoose 9**
 
-**Lý do**:
-- Đã chọn ở v2
-- Performance gần raw SQL (faster than EF Core 30–50% ở complex query)
-- Không có lazy loading "magic" — query rõ ràng
-- Generated SQL đơn giản, debug dễ
-- Đủ tốt cho linq query phức tạp + bulk operations
+**Lý do** (chi tiết ở `08-database/01-database-strategy.md`):
+- Menu F&B (món + biến thể + topping) và đơn hàng (lines + snapshot) là document tự nhiên — đọc 1 query
+- Replica set cho multi-document transaction (setup wizard, thanh toán)
+- Atlas/managed có sẵn backup, monitoring
 
-**Alternatives**:
-- **EF Core**: phổ biến nhưng overhead, lazy loading dễ N+1, change tracking nặng
-- **Dapper**: nhẹ nhất nhưng phải viết SQL tay, dài, ít refactor
-- **NHibernate**: cũ, ít dev biết
+**Quy ước bắt buộc**:
+- Mọi repository nghiệp vụ kế thừa `BaseTenantRepository` (tự lọc `tenantId` + `deletedAt: null`)
+- Tenant/venue của request chỉ lấy từ `TenantContextService`, đã được `JwtAuthGuard` đối chiếu với membership — không đọc header trực tiếp
+- ID public là UUID v7 (`shared/utils/uuid.ts`), không lộ `ObjectId` làm khoá nghiệp vụ
 
----
-
-### Database: **PostgreSQL** (đề xuất đổi từ SQL Server hiện tại)
-
-**Lý do đổi**:
-- **Cost**: SQL Server license ~$3.700/core/năm cho Standard. Postgres free.
-- **Cloud managed**: AWS RDS Postgres, DO Managed Postgres rẻ hơn nhiều SQL Server
-- **JSONB**: query JSON native, tốt cho `settings_json`, `modifiers_json`
-- **Extensions**: pg_trgm (full-text VN), pgcrypto, TimescaleDB cho metrics
-- **Ecosystem mở**: pgBouncer connection pool, Citus cho sharding
-- **Cross-platform**: dev local trên macOS/Linux dễ hơn SQL Server
-
-**Cost saving ước tính**: $5–10k/năm tiết kiệm khi scale lên 10–20 tenant Enterprise.
-
-**Alternatives**:
-- **SQL Server**: đang dùng, tốt nhưng license đắt
-- **MySQL**: phổ biến nhưng JSON yếu hơn Postgres, foreign key MyISAM legacy issues
-- **MongoDB**: không phù hợp — cần ACID transaction strong cho payment/order
-- **CockroachDB**: distributed SQL, mạnh nhưng overkill MVP, cost cao
-
-**Quyết định kèm**:
-- Migrate `Program.cs:22` từ `UseSqlServer` → `UsePostgreSQL`
-- Update `linq2db.SqlServer` → `linq2db.PostgreSQL` package
-- Update connection string format
+**Alternatives**: PostgreSQL + Prisma/TypeORM — chỉ cân nhắc lại khi báo cáo phức tạp vượt khả năng aggregation (xem `08-database/05-postgres-sync-and-migration.md`).
 
 ---
 
@@ -78,18 +52,21 @@
 
 ---
 
-### Realtime: **SignalR** (.NET native)
+### Realtime: **Socket.IO** (`@nestjs/websockets` + `@nestjs/platform-socket.io`)
 
 **Lý do**:
-- Built-in .NET 8
-- Auto fallback (WebSocket → SSE → Long Polling)
-- Backplane Redis cho multi-instance
-- Client SDK có cho JS, Java, Swift, .NET (Mobile)
+- Tích hợp sẵn trong NestJS (Gateway, guard, DI dùng chung với REST)
+- Auto fallback (WebSocket → long polling), reconnect phía client
+- `@socket.io/redis-adapter` cho multi-instance — Redis đã có trong hạ tầng
+- Client JS dùng chung cho web admin, KDS, trang QR của khách, mobile (React Native)
+
+**Room**: `tenant:{tenantId}:venue:{venueId}` — POS, KDS, chủ quán cùng nghe; khách QR nghe `session:{sessionId}`.
 
 **Alternatives**:
-- **Socket.io**: Node.js-centric, integration với .NET mệt
+- **SSE**: đơn giản, 1 chiều — đủ cho KDS nhưng không cho trang khách gửi tín hiệu
 - **Ably / Pusher**: managed, tốt nhưng cost cao + vendor lock-in
-- **MQTT**: tốt cho IoT, không phải dùng case này
+
+**Hiện trạng**: KDS, POS, trang khách đang polling 2–5s → thay ở Phase 2.
 
 ---
 
@@ -161,7 +138,7 @@
 
 **Alternatives**:
 - **GCP**: tốt nhưng VN ít dev quen
-- **Azure**: phù hợp nếu Microsoft-shop, ecosystem .NET tốt; cân nhắc nếu được offer credits
+- **Azure**: cân nhắc nếu được offer credits
 - **Vietnam cloud (VNG, Viettel IDC)**: cần cho Enterprise tier; cost cao, UI thua quốc tế
 
 ---
@@ -193,7 +170,7 @@
 
 ### Container: **Docker**
 
-- Backend `Dockerfile` build .NET app slim image
+- Backend `Dockerfile` (Node 20 alpine, `nest build`, chạy `node dist/main`)
 - Web `Dockerfile` đã có (Next.js standalone)
 - Compose cho dev local
 
@@ -223,9 +200,10 @@
 ## Auth & Security
 
 - **JWT** custom (RS256) với key rotation
-- **Argon2id** cho password hashing (dùng `Microsoft.AspNetCore.Cryptography.KeyDerivation` hoặc `Konscious.Security.Cryptography`)
-- **2FA TOTP** với `Otp.NET`
-- **Rate limiting**: ASP.NET Core 8 built-in middleware
+- **Argon2id** cho password hashing (package `argon2` — đã dùng)
+- **2FA TOTP** với `otplib` (chưa làm)
+- **Rate limiting**: `@nestjs/throttler` + Redis storage (chưa làm)
+- **Tenant isolation**: `JwtAuthGuard` đối chiếu `X-Tenant-Id` / `X-Venue-Id` với membership trong DB; quyền lấy từ membership, không lấy từ JWT
 - **CORS**: whitelist origin theo env
 
 ---
@@ -266,11 +244,11 @@
 
 | Component | Choice | Có thể đổi sau? | Cost MVP/tháng |
 | --- | --- | --- | --- |
-| Backend lang | .NET 8 | Khó (rewrite) | $0 |
-| ORM | linq2db | Trung bình | $0 |
-| DB | PostgreSQL | Trung bình | $15 |
+| Backend lang | NestJS 11 (Node 20) | Khó (rewrite) | $0 |
+| ODM | Mongoose 9 | Trung bình | $0 |
+| DB | MongoDB 7 (replica set) | Trung bình | $0–57 (self-host / Atlas M10) |
 | Cache | Redis | Dễ | $15 |
-| Realtime | SignalR | Trung bình | $0 |
+| Realtime | Socket.IO + Redis adapter | Trung bình | $0 |
 | Frontend Web | Next.js 15 | Khó | $0 |
 | Mobile | React Native | Khó | $0 |
 | Hosting | DigitalOcean | Dễ | $40 |
@@ -284,13 +262,13 @@
 
 ## Action items khi nhận quyết định
 
-- [ ] Sửa `ordergo-api-v2/src/Api/Restaurant.Api/Program.cs:22` — `options` → `opt`
-- [ ] Đổi `UseSqlServer` → `UseLinqToDB` cho Postgres + cập nhật package `linq2db.PostgreSQL`
-- [ ] Thêm appsettings cho Postgres connection
-- [ ] Khởi tạo Mobile POS project (Expo init)
-- [ ] Setup CI/CD GitHub Actions cho cả 3 codebase
-- [ ] Tạo Dockerfile cho backend (chưa có)
+- [x] Chốt NestJS + MongoDB, dừng `ordergo-api-v2` (.NET)
+- [x] Dockerfile cho backend + frontend, docker-compose (infra / full / dev)
+- [x] CI GitHub Actions: lint, format, test, build (+ e2e với Mongo) cho `ordergo-api` và `ordergo-web`
+- [x] Script seed dữ liệu demo (`yarn seed:demo`)
+- [ ] Realtime Socket.IO cho POS ↔ KDS ↔ khách QR (Phase 2)
+- [ ] Mobile POS: dùng PWA trước, app native sau khi có phản hồi pilot
 - [ ] Document onboarding dev mới ở `06-process/`
 
 ---
-*Changelog: v0.1 — 2026-05-01.*
+*Changelog: v0.1 — 2026-05-01. v0.3 — 2026-11-09: chốt NestJS + MongoDB, bỏ .NET 8 / linq2db / PostgreSQL.*

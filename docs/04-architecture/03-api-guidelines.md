@@ -1,6 +1,6 @@
 # API Guidelines
 
-> Quy ước cho mọi REST API trong OrderGo. Áp dụng cho `ordergo-api-v2` (backend) và mọi public API hướng đối tác.
+> Quy ước cho mọi REST API trong OrderGo. Áp dụng cho `ordergo-api` (backend NestJS, prefix `/v1`) và mọi public API hướng đối tác.
 
 ## 1. Style & Versioning
 
@@ -268,19 +268,19 @@ Content-Type: application/json
 hmac.new(secret, body, sha256).hexdigest() == signature
 ```
 
-## 12. Realtime API (SignalR)
+## 12. Realtime API (Socket.IO) — *Phase 2, chưa làm*
 
-### Hub URL
+### Namespace
 ```
-wss://api.ordergo.vn/hubs/operations
+wss://api.ordergo.vn/realtime   (Socket.IO, path mặc định /socket.io)
 ```
 
 ### Auth
-JWT trong query: `?access_token=<jwt>` (SignalR limitation)
+JWT gửi trong `auth` lúc handshake: `io(url, { auth: { token: '<jwt>' } })` — server đối chiếu membership giống `JwtAuthGuard` trước khi cho join room.
 
 ### Subscribe
 ```js
-hub.on("OrderUpdated", (order) => { ... });
+socket.on("order.updated", (order) => { ... });
 ```
 
 ### Topics tự động sub theo tenant/venue trong JWT
