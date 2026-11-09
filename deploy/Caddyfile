@@ -1,0 +1,73 @@
+# Caddy — reverse proxy + HTTPS tự động cho OrderGo staging/demo.
+# Domain lấy từ biến môi trường (docker-compose.prod.yml truyền vào):
+#   WEB_DOMAIN  vd demo.example.com      → web:3000 (Next.js)
+#   API_DOMAIN  vd api.demo.example.com  → api:4000 (NestJS: /v1, /uploads, /socket.io, /api-docs)
+# Chứng chỉ Let's Encrypt cấp tự động khi DNS A record đã trỏ về VPS và port 80/443 mở.
+{
+	# Không cần email ACME (Let's Encrypt đã ngừng gửi mail nhắc hết hạn).
+	# Muốn thêm: email ops@example.com
+}
+
+(common) {
+	encode zstd gzip
+	log {
+		output stdout
+		format json
+	}
+}
+
+# ─── Web (admin, POS, KDS, trang gọi món QR của khách) ─────
+{$WEB_DOMAIN} {
+	import common
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		# Web không dùng camera trong app (khách quét QR bằng app camera của điện thoại).
+		# Nếu sau này thêm máy quét QR trong trình duyệt: đổi camera=() thành camera=(self).
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()"
+		-Server
+	}
+
+	# Web không nhận upload (ảnh đi thẳng lên API) → giới hạn nhỏ.
+	request_body {
+		max_size 5MB
+	}
+
+	reverse_proxy web:3000
+}
+
+# ─── API ───────────────────────────────────────────────────
+{$API_DOMAIN} {
+	import common
+
+	# "?" = chỉ đặt nếu API chưa tự đặt (tránh trùng với helmet ở API).
+	header {
+		?Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		?X-Content-Type-Options "nosniff"
+		?Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Ảnh upload tối đa 2MB + overhead multipart.
+	request_body {
+		max_size 3MB
+	}
+
+	# Socket.IO (namespace /realtime, path mặc định /socket.io/*): Caddy tự proxy
+	# WebSocket upgrade và long-polling. stream_close_delay giữ kết nối WS khi reload
+	# config để client không bị ngắt đồng loạt.
+	@socketio path /socket.io/*
+	handle @socketio {
+		reverse_proxy api:4000 {
+			stream_close_delay 5m
+		}
+	}
+
+	# /v1/* (REST), /uploads/* (ảnh tĩnh do API phục vụ), /api-docs (Swagger).
+	handle {
+		reverse_proxy api:4000
+	}
+}

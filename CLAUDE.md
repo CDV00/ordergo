@@ -69,6 +69,9 @@ yarn format:check
 - **Shifts** (`modules/shift`): one open shift per venue (partial unique index); payments auto-attach to the open shift; close computes expected cash = opening + cash in − cash refunds, a non-zero difference requires a note.
 - **Reports** (`modules/reporting`): `/reports/sales` (≤92 days, venue timezone buckets), CSV export with BOM and formula-injection guard.
 
+- **Hardening**: helmet (strict CSP for JSON, relaxed only on `/api-docs`; Swagger off in production unless `SWAGGER_ENABLED=1`), JSON body limit 100kb, `@nestjs/throttler` (per user when authenticated, per IP otherwise; strict on auth/public QR/OTP; `THROTTLE_DISABLED=1` in tests), per-phone login lockout after 5 failures/15 min stored in Mongo (`login_attempts`, hashed phone, TTL). Behind Caddy set `TRUST_PROXY=1` or every client shares one IP bucket. Optional Sentry via real env `SENTRY_DSN` (5xx only, PII scrubbed). Production refuses to boot with equal or `change_me` JWT secrets.
+- Role permissions are copied onto each membership; `TenantModule` re-syncs standard roles to `ROLE_PERMISSIONS` on boot, so editing the map takes effect for existing members (role `custom` is left alone).
+
 ## Web architecture (`ordergo-web/src`)
 
 - `app/(main)/*` authenticated screens (pos, tables, orders, kds, menu, staff, customers, chef, payments); `app/(public)/m/[tenantSlug]/*` customer QR ordering; `app/login`, `app/setup` (setup wizard).
@@ -80,6 +83,11 @@ yarn format:check
 - Realtime: `providers/realtime-provider.tsx` (mounted in the `(main)` layout) invalidates TanStack queries on socket events and toasts QR orders / "món đã xong". Hooks poll with `useLiveInterval(fallbackMs)` → 60s while connected, `fallbackMs` when not. Customer pages use `usePublicRealtime(sessionId)` (one shared socket per session). KDS chime is generated with Web Audio (`lib/sound.ts`) and needs one tap on "Bật âm báo".
 - PWA: `app/manifest.ts` + generated icons at `/pwa-icon/192|512`; start URL `/pos`, any orientation.
 - State: Zustand stores in `lib/*-store.ts`. UI primitives: `components/ui/*` (shadcn/Radix); use `cn()` from `@/lib/utils` and the `@/*` alias.
+
+## Workspace-level tooling
+
+- `e2e/` — Playwright UI suite (own `package.json`): starts API on :4100 and web on :3100 (`next build` + `next start`, so it overwrites `ordergo-web/.next` with the :4100 API URL — rebuild/`rm -rf .next` afterwards), seeds DB `ordergo_playwright`, logs in once per role into `e2e/.auth/`. Run: `cd e2e && npx playwright test`. CI: `.github/workflows/e2e.yml` (checks out submodules, Mongo replica set).
+- Deploy: `docker-compose.prod.yml` + `deploy/` (Caddyfile with automatic HTTPS for `WEB_DOMAIN`/`API_DOMAIN`, daily `mongodump` backup container, `deploy.sh`, `seed-demo.sh`, `backup-now.sh`, `restore.sh`). Runbook: `docs/06-process/04-deploy-staging.md`. Demo script: `docs/05-roadmap/04-kich-ban-demo.md`.
 
 ## Conventions
 

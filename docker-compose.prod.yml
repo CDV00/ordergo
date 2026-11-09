@@ -1,0 +1,167 @@
+name: ordergo-prod
+
+# ─────────────────────────────────────────────────────────
+# Stack staging/demo cho 1 VPS (Ubuntu + Docker). Runbook:
+#   docs/06-process/04-deploy-staging.md
+#
+#   cp deploy/.env.staging.example .env   # rồi điền domain + secrets
+#   ./deploy/deploy.sh                    # = git pull + up -d --build --wait
+#
+# Chỉ Caddy mở port ra ngoài (80/443). Mongo/API/Web chỉ nằm trong network nội bộ.
+# Bật Mongo auth: thêm -f deploy/docker-compose.mongo-auth.yml (xem runbook).
+# ─────────────────────────────────────────────────────────
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  # ─── MongoDB single-node replica set rs0 ───────────────────
+  # Replica set bắt buộc cho transactions + change streams (realtime).
+  # Healthcheck tự rs.initiate lần đầu (giống docker-compose.yml). KHÔNG publish port.
+  mongo:
+    image: mongo:7
+    command:
+      - --replSet
+      - rs0
+      - --bind_ip_all
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-0.5}"
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+    healthcheck:
+      test: |
+        mongosh --quiet --eval "
+          try {
+            const s = rs.status();
+            if (s.ok === 1) quit(0);
+          } catch (e) {
+            const r = rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]});
+            if (r.ok === 1) quit(0);
+            print('rs.initiate failed: ' + r.errmsg);
+            quit(1);
+          }
+        "
+      interval: 10s
+      timeout: 30s
+      start_period: 0s
+      retries: 30
+    logging: *default-logging
+    networks: [backend]
+
+  # ─── Backend API (NestJS) ──────────────────────────────────
+  # Healthcheck có sẵn trong Dockerfile (GET /v1/health).
+  api:
+    build:
+      context: ./ordergo-api
+      dockerfile: Dockerfile
+    image: ordergo-prod/api:latest
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    # Biến tuỳ chọn (SENTRY_DSN, REALTIME_DISABLED, DEMO_*...) lấy từ .env nếu có.
+    env_file:
+      - path: .env
+        required: false
+    # Biến bắt buộc / cố định — ghi đè giá trị cùng tên trong .env.
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/?replicaSet=rs0&directConnection=true}
+      MONGODB_DB: ${MONGODB_DB:-ordergo}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET trống — copy deploy/.env.staging.example sang .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET trống}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS trống — đặt https://<WEB_DOMAIN>}
+      UPLOAD_DIR: /app/uploads
+      # API đứng sau Caddy: tin 1 proxy để lấy IP thật của client (rate limit theo IP)
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+    volumes:
+      - uploads-data:/app/uploads # ảnh món / logo
+    logging: *default-logging
+    networks: [backend, edge]
+
+  # ─── Frontend Web (Next.js standalone) ─────────────────────
+  # NEXT_PUBLIC_API_URL bake vào bundle lúc build → đổi PUBLIC_API_URL phải build lại.
+  web:
+    build:
+      context: ./ordergo-web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:?PUBLIC_API_URL trống — đặt https://<API_DOMAIN>/v1}
+    image: ordergo-prod/web:latest
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    logging: *default-logging
+    networks: [edge]
+
+  # ─── Reverse proxy + HTTPS tự động (Let's Encrypt) ─────────
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - web
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      WEB_DOMAIN: ${WEB_DOMAIN:?WEB_DOMAIN trống — vd demo.example.com}
+      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN trống — vd api.demo.example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # chứng chỉ TLS — KHÔNG xoá (Let's Encrypt giới hạn số lần cấp)
+      - caddy-config:/config
+    logging: *default-logging
+    networks: [edge]
+
+  # ─── Backup Mongo + ảnh upload hằng ngày ───────────────────
+  # mongodump --archive --gzip vào volume backups, giữ BACKUP_KEEP bản mới nhất.
+  # Chạy tay: ./deploy/backup-now.sh — Khôi phục: ./deploy/restore.sh <file>
+  backup:
+    image: mongo:7
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint: ["bash", "/opt/ordergo/backup-loop.sh"]
+    environment:
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/?replicaSet=rs0&directConnection=true}
+      MONGODB_DB: ${MONGODB_DB:-ordergo}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-20} # 20:00 UTC = 03:00 giờ Việt Nam
+    volumes:
+      - ./deploy/backup-loop.sh:/opt/ordergo/backup-loop.sh:ro
+      - backups:/backups
+      - uploads-data:/uploads:ro
+    stop_grace_period: 30s
+    logging: *default-logging
+    networks: [backend]
+
+volumes:
+  mongo-data:
+  mongo-config:
+  uploads-data:
+  backups:
+  caddy-data:
+  caddy-config:
+
+networks:
+  # mongo ↔ api ↔ backup
+  backend:
+    driver: bridge
+  # caddy ↔ web/api
+  edge:
+    driver: bridge

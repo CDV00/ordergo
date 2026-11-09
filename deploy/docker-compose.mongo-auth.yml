@@ -1,0 +1,52 @@
+# Override bật xác thực MongoDB (tuỳ chọn) — dùng KÈM docker-compose.prod.yml:
+#
+#   docker compose -f docker-compose.prod.yml -f deploy/docker-compose.mongo-auth.yml --env-file .env up -d
+#   (deploy.sh tự thêm file này khi .env có MONGO_ROOT_USER)
+#
+# Cần trong .env: MONGO_ROOT_USER, MONGO_ROOT_PASSWORD, MONGO_REPLICA_KEY và MONGODB_URI có
+# user:pass@ + authSource=admin (xem deploy/.env.staging.example).
+#
+# CHỈ bật trên volume Mongo MỚI (deploy lần đầu): MONGO_INITDB_ROOT_* chỉ tạo user khi
+# /data/db trống. Bật trên DB đã có dữ liệu → xem runbook mục "Bật Mongo auth sau".
+#
+# Replica set + auth bắt buộc keyFile. Key lấy từ env, ghi vào /data/configdb/rs.key
+# (quyền 400, owner mongodb) mỗi lần container khởi động.
+
+services:
+  mongo:
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?MONGO_ROOT_USER trống}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?MONGO_ROOT_PASSWORD trống}
+      MONGO_REPLICA_KEY: ${MONGO_REPLICA_KEY:?MONGO_REPLICA_KEY trống}
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -e
+        printf '%s' "$$MONGO_REPLICA_KEY" > /data/configdb/rs.key
+        chmod 400 /data/configdb/rs.key
+        chown mongodb:mongodb /data/configdb/rs.key
+        exec docker-entrypoint.sh "$$@"
+      - --
+    command:
+      - mongod
+      - --replSet
+      - rs0
+      - --bind_ip_all
+      - --keyFile
+      - /data/configdb/rs.key
+      - --wiredTigerCacheSizeGB
+      - "${MONGO_CACHE_GB:-0.5}"
+    healthcheck:
+      test: |
+        mongosh --quiet -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "
+          try {
+            const s = rs.status();
+            if (s.ok === 1) quit(0);
+          } catch (e) {
+            const r = rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]});
+            if (r.ok === 1) quit(0);
+            print('rs.initiate failed: ' + r.errmsg);
+            quit(1);
+          }
+        "
