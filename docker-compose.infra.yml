@@ -16,7 +16,9 @@ services:
   mongo:
     image: mongo:7
     container_name: ordergo-mongo
-    command: ["--replSet", "rs0", "--bind_ip_all"]
+    # Dev: dữ liệu vài chục MB → cache WiredTiger 256MB là thừa. Mặc định Mongo lấy ~50% RAM của máy ảo
+    # Docker (WSL2) nên tiến trình vmmemWSL phình lên vài GB.
+    command: ["--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
     restart: unless-stopped
     ports:
       - "${MONGO_PORT:-27017}:27017"
