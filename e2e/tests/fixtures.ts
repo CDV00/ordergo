@@ -152,11 +152,15 @@ export const menuCard = (page: Page, name: string) =>
 export async function openCart(page: Page): Promise<Locator> {
   const width = page.viewportSize()?.width ?? 1280;
   if (width < 1024) {
+    // Sheet đóng có hiệu ứng trượt (animate-ui): lúc đang đóng vẫn "visible" nhưng data-state=closed
+    // → chỉ coi là đang mở khi data-state=open; nếu đang đóng thì chờ đóng hẳn rồi bấm mở lại.
     const sheet = page.getByRole("dialog", { name: "Giỏ hàng" });
-    if (!(await sheet.isVisible())) {
+    const openSheet = sheet.and(page.locator('[data-state="open"]'));
+    if (!(await openSheet.isVisible())) {
+      await expect(sheet).toBeHidden();
       await page.getByRole("button", { name: /món mới|Xem đơn/ }).click();
     }
-    await expect(sheet).toBeVisible();
+    await expect(openSheet).toBeVisible();
     return sheet;
   }
   const aside = page.locator("aside").filter({ hasText: "Tổng cộng" });
