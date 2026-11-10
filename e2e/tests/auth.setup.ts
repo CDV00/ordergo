@@ -10,6 +10,9 @@ const ROLES: Role[] = ["owner", "cashier", "server", "kitchen"];
 for (const role of ROLES) {
   setup(`đăng nhập ${role}`, async ({ page }) => {
     await page.goto("/login");
+    // Bản build production render lại form trên client: ~200ms đầu có 2 bản form trong DOM
+    // (bản HTML server + bản mới). Gõ vào bản cũ sẽ mất chữ → chờ chỉ còn 1 bản rồi mới điền.
+    await expect(page.locator("#login-password")).toHaveCount(1);
     await page.getByPlaceholder("0901234567").first().fill(DEMO.users[role]);
     await page.locator("#login-password").fill(DEMO.password);
     await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();

@@ -15,7 +15,11 @@ test("Báo cáo & xuất CSV: KPI hiển thị, file CSV có BOM UTF-8 và dòng
     .filter({ has: page.getByText("Doanh thu thuần", { exact: true }) })
     .filter({ hasText: /\d+đ/ })
     .last();
-  await expect(tile).toContainText(/[1-9][\d.]*đ/);
+  // Số tiền là số trượt (animate-ui) → đọc giá trị thật ở data-animated-number, không ở text hiển thị
+  await expect(tile.locator("[data-animated-number]").first()).toHaveAttribute(
+    "data-animated-number",
+    /^[1-9]\d*$/,
+  );
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Xuất CSV" }).click();
